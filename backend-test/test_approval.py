@@ -58,7 +58,7 @@ def create_test_request(request_id: str):
         }
     )
 
-
+# Happy path: Manager được phép Approve Purchase Request
 def test_manager_approve_request():
     create_test_request("PR-TEST-001")
 
@@ -129,7 +129,7 @@ def test_manager_request_revision():
         == "manager@demo.com"
     )
 
-
+# Permission failure: Employee không có quyền Approve → 403
 def test_employee_cannot_approve():
     create_test_request("PR-TEST-004")
 
@@ -151,7 +151,7 @@ def test_employee_cannot_approve():
         == "PENDING_APPROVAL"
     )
 
-
+# Business rule: Request đã APPROVED không được xử lý lại → 400
 def test_approved_request_cannot_be_processed_again():
     create_test_request("PR-TEST-005")
 

@@ -479,7 +479,7 @@ def decide_request(
     decision: Decision,
     current_user: Annotated[
         dict,
-        Depends(require_roles("manager", "admin"))
+        Depends(require_roles("manager"))
     ],
 ):
     request = next(
