@@ -1,5 +1,10 @@
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Literal
+import os
+import uuid
+
+from dotenv import load_dotenv
+from supabase import create_client, Client
 
 import jwt
 from fastapi import Depends, FastAPI, HTTPException, status
@@ -18,9 +23,35 @@ app = FastAPI(title="RoomFlow API", version="0.2.0")
 
 # DEMO ONLY.
 # Move this value to an environment variable before production.
-SECRET_KEY = "MIS3032-DEMO-SECRET-CHANGE-IN-PRODUCTION"
+load_dotenv()
+
+SECRET_KEY = os.getenv(
+    "SECRET_KEY",
+    "MIS3032-DEMO-SECRET-CHANGE-IN-PRODUCTION"
+)
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_PUBLISHABLE_KEY = os.getenv("SUPABASE_PUBLISHABLE_KEY")
+
+USE_SUPABASE = (
+    os.getenv("USE_SUPABASE", "true").lower() == "true"
+)
+
+supabase: Client | None = None
+
+if USE_SUPABASE:
+    if not SUPABASE_URL or not SUPABASE_PUBLISHABLE_KEY:
+        raise RuntimeError(
+            "SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY are required"
+        )
+
+    supabase = create_client(
+        SUPABASE_URL,
+        SUPABASE_PUBLISHABLE_KEY,
+    )
 
 password_hash = PasswordHash.recommended()
 
@@ -404,6 +435,52 @@ def check_budget(
 # PURCHASE REQUESTS
 # ============================================================
 
+WORKFLOW_ROLES = ("Manager", "Finance", "Procurement")
+
+
+def workflow_for_status(status_value: str) -> list[dict]:
+    """Return the workflow shape expected by the frontend.
+
+    Supabase stores the workflow state in flat columns, so the API adds
+    this computed workflow field to every PR response.
+    """
+    if status_value == "PENDING_APPROVAL":
+        statuses = {
+            "Manager": "pending",
+            "Finance": "waiting",
+            "Procurement": "waiting",
+        }
+    elif status_value == "APPROVED":
+        statuses = {
+            "Manager": "approved",
+            "Finance": "pending",
+            "Procurement": "waiting",
+        }
+    elif status_value == "REJECTED":
+        statuses = {
+            "Manager": "rejected",
+            "Finance": "cancelled",
+            "Procurement": "cancelled",
+        }
+    elif status_value == "REVISION_REQUIRED":
+        statuses = {
+            "Manager": "revision_required",
+            "Finance": "cancelled",
+            "Procurement": "cancelled",
+        }
+    else:
+        statuses = {
+            "Manager": "waiting",
+            "Finance": "waiting",
+            "Procurement": "waiting",
+        }
+
+    return [
+        {"role": role, "status": statuses[role]}
+        for role in WORKFLOW_ROLES
+    ]
+
+
 @app.get("/purchase-requests")
 def list_requests(
     current_user: Annotated[
@@ -411,6 +488,23 @@ def list_requests(
         Depends(get_current_user)
     ]
 ):
+    if USE_SUPABASE and supabase:
+        response = (
+            supabase
+            .table("purchase_requests")
+            .select("*")
+            .order("created_at", desc=True)
+            .execute()
+        )
+
+        result = []
+        for row in response.data:
+            item = dict(row)
+            item["workflow"] = workflow_for_status(item["status"])
+            result.append(item)
+
+        return result
+
     return requests
 
 
@@ -430,10 +524,13 @@ def create_request(
         data.amount,
     )
 
+    # UUID suffix prevents duplicate IDs in both Supabase and in-memory mode.
     request_id = (
         f"PR-{datetime.now().year}-"
-        f"{len(requests) + 1:04d}"
+        f"{uuid.uuid4().hex[:8].upper()}"
     )
+
+    created_at = datetime.now(timezone.utc).isoformat()
 
     request = {
         "id": request_id,
@@ -441,34 +538,59 @@ def create_request(
         "created_by": current_user["email"],
         "created_role": current_user["role"],
         "status": "PENDING_APPROVAL",
-        "created_at": datetime.now(
-            timezone.utc
-        ).isoformat(),
+        "created_at": created_at,
+        "next_approval_role": "Manager",
         "budget": budget,
-        "workflow": [
-            {
-                "role": "Manager",
-                "status": "pending",
-            },
-            {
-                "role": "Finance",
-                "status": "waiting",
-            },
-            {
-                "role": "Procurement",
-                "status": "waiting",
-            },
-        ],
+        "workflow": workflow_for_status("PENDING_APPROVAL"),
     }
 
-    requests.append(request)
+    if USE_SUPABASE and supabase:
+        db_request = {
+            "id": request["id"],
+            "title": request["title"],
+            "department": request["department"],
+            "amount": request["amount"],
+            "category": request["category"],
+            "justification": request["justification"],
+            "requester": request["requester"],
+            "created_by": request["created_by"],
+            "created_role": request["created_role"],
+            "status": request["status"],
+            "created_at": request["created_at"],
+            "next_approval_role": "Manager",
+            "budget_limit": budget["limit"],
+            "budget_spent": budget["spent"],
+            "budget_available": budget["available"],
+            "budget_remaining": budget["remaining"],
+            "is_within_budget": budget["is_within_budget"],
+        }
 
+        response = (
+            supabase
+            .table("purchase_requests")
+            .insert(db_request)
+            .execute()
+        )
+
+        if not response.data:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to create purchase request",
+            )
+
+        created = dict(response.data[0])
+        created["workflow"] = workflow_for_status(
+            created["status"]
+        )
+        return created
+
+    requests.append(request)
     return request
 
 
 # ============================================================
 # APPROVAL
-# MANAGER + ADMIN ONLY
+# MANAGER ONLY
 # ============================================================
 
 @app.post(
@@ -482,14 +604,35 @@ def decide_request(
         Depends(require_roles("manager"))
     ],
 ):
-    request = next(
-        (
-            item
-            for item in requests
-            if item["id"] == request_id
-        ),
-        None,
-    )
+    if USE_SUPABASE and supabase:
+        response = (
+            supabase
+            .table("purchase_requests")
+            .select("*")
+            .eq("id", request_id)
+            .limit(1)
+            .execute()
+        )
+
+        request = (
+            dict(response.data[0])
+            if response.data
+            else None
+        )
+
+        if request:
+            request["workflow"] = workflow_for_status(
+                request["status"]
+            )
+    else:
+        request = next(
+            (
+                item
+                for item in requests
+                if item["id"] == request_id
+            ),
+            None,
+        )
 
     if not request:
         raise HTTPException(
@@ -497,7 +640,7 @@ def decide_request(
             detail="Purchase request not found",
         )
 
-    # Chỉ request đang chờ Manager Approval mới được xử lý
+    # Chỉ request đang chờ Manager Approval mới được xử lý.
     if request["status"] != "PENDING_APPROVAL":
         raise HTTPException(
             status_code=400,
@@ -522,61 +665,133 @@ def decide_request(
             detail="Manager approval step not found",
         )
 
-    # APPROVE
+    # APPROVE: Manager -> Finance.
     if decision.action == "approved":
+        approved_at = datetime.now(timezone.utc).isoformat()
+
+        if USE_SUPABASE and supabase:
+            response = (
+                supabase
+                .table("purchase_requests")
+                .update({
+                    "status": "APPROVED",
+                    "approved_by": current_user["email"],
+                    "approved_at": approved_at,
+                    "approval_comment": decision.comment,
+                    "next_approval_role": "Finance",
+                })
+                .eq("id", request_id)
+                .execute()
+            )
+
+            if not response.data:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to update purchase request",
+                )
+
+            updated = dict(response.data[0])
+            updated["workflow"] = workflow_for_status("APPROVED")
+            return updated
+
         manager_step["status"] = "approved"
         manager_step["comment"] = decision.comment
         manager_step["approved_by"] = current_user["email"]
 
         request["status"] = "APPROVED"
         request["approved_by"] = current_user["email"]
-        request["approved_at"] = datetime.now(
-            timezone.utc
-        ).isoformat()
+        request["approved_at"] = approved_at
         request["approval_comment"] = decision.comment
-
-        next_step = next(
-            (
-                item
-                for item in request["workflow"]
-                if item["status"] == "waiting"
-            ),
-            None,
-        )
-
-        if next_step:
-            next_step["status"] = "pending"
-            request["next_approval_role"] = next_step["role"]
+        request["next_approval_role"] = "Finance"
+        request["workflow"] = workflow_for_status("APPROVED")
 
         return request
 
-    # REJECT
+    # REJECT: terminal state.
     if decision.action == "rejected":
+        rejected_at = datetime.now(timezone.utc).isoformat()
+
+        if USE_SUPABASE and supabase:
+            response = (
+                supabase
+                .table("purchase_requests")
+                .update({
+                    "status": "REJECTED",
+                    "rejected_by": current_user["email"],
+                    "rejected_at": rejected_at,
+                    "approval_comment": decision.comment,
+                    "next_approval_role": None,
+                })
+                .eq("id", request_id)
+                .execute()
+            )
+
+            if not response.data:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to update purchase request",
+                )
+
+            updated = dict(response.data[0])
+            updated["workflow"] = workflow_for_status("REJECTED")
+            return updated
+
         manager_step["status"] = "rejected"
         manager_step["comment"] = decision.comment
         manager_step["rejected_by"] = current_user["email"]
 
         request["status"] = "REJECTED"
         request["rejected_by"] = current_user["email"]
-        request["rejected_at"] = datetime.now(
-            timezone.utc
-        ).isoformat()
+        request["rejected_at"] = rejected_at
         request["approval_comment"] = decision.comment
+        request["next_approval_role"] = None
+        request["workflow"] = workflow_for_status("REJECTED")
 
         return request
 
-    # REQUEST REVISION
+    # REQUEST REVISION: terminal state until a new PR/submission is made.
     if decision.action == "revision":
+        revision_at = datetime.now(timezone.utc).isoformat()
+
+        if USE_SUPABASE and supabase:
+            response = (
+                supabase
+                .table("purchase_requests")
+                .update({
+                    "status": "REVISION_REQUIRED",
+                    "revision_requested_by": current_user["email"],
+                    "revision_requested_at": revision_at,
+                    "revision_comment": decision.comment,
+                    "next_approval_role": None,
+                })
+                .eq("id", request_id)
+                .execute()
+            )
+
+            if not response.data:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to update purchase request",
+                )
+
+            updated = dict(response.data[0])
+            updated["workflow"] = workflow_for_status(
+                "REVISION_REQUIRED"
+            )
+            return updated
+
         manager_step["status"] = "revision_required"
         manager_step["comment"] = decision.comment
         manager_step["revision_by"] = current_user["email"]
 
         request["status"] = "REVISION_REQUIRED"
         request["revision_requested_by"] = current_user["email"]
-        request["revision_requested_at"] = datetime.now(
-            timezone.utc
-        ).isoformat()
+        request["revision_requested_at"] = revision_at
         request["revision_comment"] = decision.comment
+        request["next_approval_role"] = None
+        request["workflow"] = workflow_for_status(
+            "REVISION_REQUIRED"
+        )
 
         return request
 
