@@ -1,14 +1,20 @@
-"""Five US-03 approval tests; storage follows USE_SUPABASE."""
+"""Five US-03 tests against real Supabase (run with USE_SUPABASE=true)."""
 
 import uuid
 
 import pytest
 from fastapi.testclient import TestClient
 
-from config import USE_SUPABASE
-from database import supabase
-import main
+from config import SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL, USE_SUPABASE
 
+if not USE_SUPABASE:
+    pytest.skip("Set USE_SUPABASE=true to run Supabase tests", allow_module_level=True)
+
+import main
+from database import supabase
+
+if not SUPABASE_URL or not SUPABASE_PUBLISHABLE_KEY or supabase is None:
+    pytest.fail("USE_SUPABASE=true requires valid Supabase URL/key and client")
 
 client = TestClient(main.app)
 
@@ -41,34 +47,21 @@ def request_id():
         "status": "PENDING_APPROVAL",
         "next_approval_role": "Manager",
     }
-    if USE_SUPABASE:
-        assert supabase is not None
-        inserted = supabase.table("purchase_requests").insert(row).execute()
-        assert inserted.data and inserted.data[0]["id"] == request_id
-    else:
-        row["workflow"] = [
-            {"role": "Manager", "status": "pending"},
-            {"role": "Finance", "status": "waiting"},
-            {"role": "Procurement", "status": "waiting"},
-        ]
-        main.requests.append(row)
-
+    inserted = supabase.table("purchase_requests").insert(row).execute()
+    assert inserted.data and inserted.data[0]["id"] == request_id
+    # IDs are unique; this Supabase role has no DELETE privilege.
     yield request_id
-    if not USE_SUPABASE:
-        main.requests[:] = [r for r in main.requests if r["id"] != request_id]
 
 
 def stored_request(request_id: str) -> dict:
-    if USE_SUPABASE:
-        return (
-            supabase.table("purchase_requests")
-            .select("*")
-            .eq("id", request_id)
-            .single()
-            .execute()
-            .data
-        )
-    return next(r for r in main.requests if r["id"] == request_id)
+    return (
+        supabase.table("purchase_requests")
+        .select("*")
+        .eq("id", request_id)
+        .single()
+        .execute()
+        .data
+    )
 
 
 def decide(request_id: str, email: str, action: str):
