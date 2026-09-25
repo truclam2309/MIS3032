@@ -1,0 +1,158 @@
+name: CI và triển khai
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Kiểm thử, rà soát và build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Lấy mã nguồn
+        uses: actions/checkout@v6
+
+      - name: Cài đặt Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Cài dependency backend và test
+        working-directory: backend-test
+        run: python -m pip install -e ".[test]" pip-audit
+
+      - name: Rà soát dependency Python
+        working-directory: backend-test
+        run: pip-audit
+
+      - name: Chạy test backend
+        working-directory: backend-test
+        env:
+          USE_SUPABASE: "false"
+          APP_ENV: development
+        run: python -m pytest -q
+
+      - name: Cài đặt Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: Source Code/package-lock.json
+
+      - name: Cài dependency frontend
+        working-directory: Source Code
+        run: npm ci
+
+      - name: Rà soát dependency frontend
+        working-directory: Source Code
+        run: npm audit --audit-level=high
+
+      - name: Build frontend
+        working-directory: Source Code
+        run: npm run build
+
+      - name: Build container backend
+        run: docker build -t roomflow-api:ci ./backend-test
+
+      - name: Build container frontend
+        run: docker build --build-arg VITE_API_URL=http://localhost:8000 -t roomflow-web:ci "./Source Code"
+
+  publish:
+    name: Đưa image sẵn sàng triển khai lên registry
+    needs: verify
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Lấy mã nguồn
+        uses: actions/checkout@v6
+
+      - name: Tạo tiền tố image chữ thường
+        id: images
+        shell: bash
+        run: echo "image_prefix=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Cấu hình Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Đăng nhập GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish image backend
+        uses: docker/build-push-action@v7
+        with:
+          context: ./backend-test
+          push: true
+          tags: |
+            ${{ steps.images.outputs.image_prefix }}-api:sha-${{ github.sha }}
+            ${{ steps.images.outputs.image_prefix }}-api:latest
+
+      - name: Publish image frontend
+        uses: docker/build-push-action@v7
+        with:
+          context: ./Source Code
+          push: true
+          build-args: VITE_API_URL=${{ vars.PUBLIC_API_URL || 'http://localhost:8000' }}
+          tags: |
+            ${{ steps.images.outputs.image_prefix }}-web:sha-${{ github.sha }}
+            ${{ steps.images.outputs.image_prefix }}-web:latest
+
+  deploy:
+    name: Triển khai lên máy chủ đã cấu hình
+    needs: publish
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true' && vars.PUBLIC_API_URL != '' && vars.DEPLOY_PATH != ''
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Cấu hình SSH
+        shell: bash
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Tạo tiền tố image chữ thường
+        id: images
+        shell: bash
+        run: echo "image_prefix=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Đăng nhập registry trên máy chủ triển khai
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_READ_TOKEN" | ssh -i ~/.ssh/id_ed25519 "$DEPLOY_USER@$DEPLOY_HOST" \
+            "docker login ghcr.io -u '$GHCR_USERNAME' --password-stdin"
+
+      - name: Kéo image và khởi động lại dịch vụ
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          IMAGE_PREFIX: ${{ steps.images.outputs.image_prefix }}
+          IMAGE_TAG: sha-${{ github.sha }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd '$DEPLOY_PATH' && BACKEND_IMAGE='$IMAGE_PREFIX-api:$IMAGE_TAG' FRONTEND_IMAGE='$IMAGE_PREFIX-web:$IMAGE_TAG' docker compose pull && BACKEND_IMAGE='$IMAGE_PREFIX-api:$IMAGE_TAG' FRONTEND_IMAGE='$IMAGE_PREFIX-web:$IMAGE_TAG' docker compose up -d --no-build --wait --wait-timeout 120"

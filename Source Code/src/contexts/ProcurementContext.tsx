@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   aiAnalyses,
   anomalyAlerts,
@@ -25,6 +25,24 @@ import type {
 '../types/procurement';
 import { nowIso } from '../utils/format';
 import { isExpired } from '../utils/quotes';
+import { useAuth } from './AuthContext';
+
+const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+
+interface ApiPurchaseRequest {
+  id: string;
+  title: string;
+  category: string;
+  department: string;
+  requester: string;
+  justification: string;
+  amount: number | string;
+  status: string;
+  created_at?: string;
+  updated_at?: string;
+  is_within_budget?: boolean | null;
+  details?: Partial<Pick<NewRequestPayload, 'costCenter' | 'neededBy' | 'deliveryLocation' | 'items' | 'aiSuggestionsApplied'>>;
+}
 
 export interface BudgetSnapshot {
   line: BudgetLine;
@@ -63,7 +81,7 @@ interface ProcurementValue {
   createPurchaseOrder: (requestId: string) => void;
   receiveGoods: (orderId: string, condition: 'complete' | 'partial', note: string) => void;
   closeOrder: (orderId: string, note: string) => void;
-  createRequest: (payload: NewRequestPayload, submit: boolean) => string;
+  createRequest: (payload: NewRequestPayload, submit: boolean) => Promise<string>;
   updateRequest: (
   id: string,
   payload: NewRequestPayload,
@@ -112,11 +130,70 @@ export function ProcurementProvider({
 
 
 }: {children: React.ReactNode;aiAssistEnabled?: boolean;}) {
+  const { user } = useAuth();
   const [requests, setRequests] = useState<PurchaseRequest[]>(seedRequests);
   const [liveQuotations, setLiveQuotations] = useState<Quotation[]>(seedQuotations);
   const [revealedAnalyses, setRevealedAnalyses] = useState<string[]>(['PR-2026-038', 'PR-2026-032']);
   const [orders, setOrders] = useState<PurchaseOrder[]>(seedOrders);
   const [lastError, setLastError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem('procurement-token');
+    if (!user || !token) return;
+
+    let cancelled = false;
+    fetch(`${API_URL}/purchase-requests`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }).then(async (response) => {
+      if (!response.ok) throw new Error('Could not load purchase requests from the server.');
+      const rows: ApiPurchaseRequest[] = await response.json();
+      if (cancelled) return;
+
+      const persisted = rows.map((row): PurchaseRequest => {
+        const details = row.details ?? {};
+        const createdAt = row.created_at ?? nowIso();
+        return {
+          id: row.id,
+          title: row.title,
+          category: row.category,
+          department: row.department,
+          requester: row.requester,
+          costCenter: details.costCenter ?? '',
+          neededBy: details.neededBy ?? '',
+          deliveryLocation: details.deliveryLocation ?? '',
+          justification: row.justification,
+          items: details.items ?? [],
+          estimatedTotal: Number(row.amount),
+          status: row.status === 'PENDING_APPROVAL' ? 'pending-approval'
+            : row.status === 'APPROVED' ? 'approved'
+              : row.status === 'REJECTED' ? 'rejected'
+                : row.status === 'REVISION_REQUIRED' ? 'revision-required' : 'submitted',
+          createdAt,
+          updatedAt: row.updated_at ?? createdAt,
+          budgetLineId: seedBudgetLines.find((line) => line.category === row.category)?.id ?? null,
+          budgetCheck: { state: row.is_within_budget === false ? 'exceeded' : 'pending' },
+          evaluations: [],
+          aiSuggestionsApplied: details.aiSuggestionsApplied ?? [],
+          timeline: [{
+            id: `server-${row.id}`,
+            at: createdAt,
+            actor: row.requester,
+            role: 'employee',
+            label: 'Submitted for approval',
+          }],
+        };
+      });
+      setRequests((current) => {
+        const byId = new Map(current.map((request) => [request.id, request]));
+        persisted.forEach((request) => byId.set(request.id, request));
+        return Array.from(byId.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      });
+    }).catch((error: unknown) => {
+      if (!cancelled) setLastError(error instanceof Error ? error.message : 'Could not load purchase requests.');
+    });
+
+    return () => { cancelled = true; };
+  }, [user]);
 
   const patch = useCallback(
     (id: string, updater: (r: PurchaseRequest) => PurchaseRequest) => {
@@ -159,7 +236,74 @@ export function ProcurementProvider({
   }, []);
 
   const createRequest = useCallback(
-    (payload: NewRequestPayload, submit: boolean) => {
+    async (payload: NewRequestPayload, submit: boolean) => {
+      if (submit) {
+        const token = localStorage.getItem('procurement-token');
+        if (!token) {
+          const message = 'Your session is missing an API token. Sign in again before submitting.';
+          setLastError(message);
+          throw new Error(message);
+        }
+
+        const amount = payload.items.reduce((sum, item) => sum + item.qty * item.estUnitPrice, 0);
+        try {
+          const response = await fetch(`${API_URL}/purchase-requests`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              title: payload.title,
+              department: payload.department,
+              amount,
+              category: payload.category,
+              justification: payload.justification,
+              requester: user?.name,
+              costCenter: payload.costCenter,
+              neededBy: payload.neededBy,
+              deliveryLocation: payload.deliveryLocation,
+              items: payload.items,
+              aiSuggestionsApplied: payload.aiSuggestionsApplied,
+            }),
+          });
+          const result = await response.json();
+          if (!response.ok) {
+            throw new Error(result.detail ?? 'Could not save purchase request.');
+          }
+
+          const createdAt = result.created_at ?? nowIso();
+          const persisted: PurchaseRequest = {
+            id: result.id,
+            title: result.title,
+            category: result.category,
+            department: result.department,
+            requester: result.requester,
+            costCenter: result.details?.costCenter ?? payload.costCenter,
+            neededBy: result.details?.neededBy ?? payload.neededBy,
+            deliveryLocation: result.details?.deliveryLocation ?? payload.deliveryLocation,
+            justification: result.justification,
+            items: result.details?.items ?? payload.items,
+            estimatedTotal: Number(result.amount),
+            status: 'pending-approval',
+            createdAt,
+            updatedAt: result.updated_at ?? createdAt,
+            budgetLineId: seedBudgetLines.find((line) => line.category === result.category)?.id ?? null,
+            budgetCheck: { state: result.is_within_budget === false ? 'exceeded' : 'pending' },
+            evaluations: [],
+            aiSuggestionsApplied: payload.aiSuggestionsApplied,
+            timeline: [{ id: `server-${result.id}`, at: createdAt, actor: user?.name ?? 'Employee', role: 'employee', label: 'Submitted for approval' }],
+          };
+          setRequests((previous) => [persisted, ...previous.filter((request) => request.id !== persisted.id)]);
+          setLastError(null);
+          return persisted.id;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Could not save purchase request.';
+          setLastError(message);
+          throw error;
+        }
+      }
+
       const highest = requests.reduce((max, r) => {
         const match = r.id.match(/PR-2026-(\d+)/);
         return match ? Math.max(max, Number.parseInt(match[1], 10)) : max;
@@ -207,7 +351,7 @@ export function ProcurementProvider({
       setRequests((prev) => [request, ...prev]);
       return id;
     },
-    [requests]
+    [requests, user]
   );
 
   const updateRequest = useCallback(

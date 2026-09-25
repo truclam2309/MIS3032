@@ -4,53 +4,18 @@ import type { Role } from '../types/procurement'
 
 interface AuthContextType {
   user: AuthUser | null
-  login: (email: string, password: string) => boolean
+  login: (email: string, password: string) => Promise<boolean>
   logout: () => void
   hasRole: (roles: Role[]) => boolean
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-const DEMO_USERS: Array<AuthUser & { password: string }> = [
-  {
-    id: '1',
-    name: 'System Administrator',
-    email: 'admin@demo.com',
-    password: '123456',
-    role: 'admin',
-  },
-  {
-    id: '2',
-    name: 'Employee Demo',
-    email: 'employee@demo.com',
-    password: '123456',
-    role: 'employee',
-  },
-  {
-    id: '3',
-    name: 'Manager Demo',
-    email: 'manager@demo.com',
-    password: '123456',
-    role: 'manager',
-  },
-  {
-    id: '4',
-    name: 'Finance Demo',
-    email: 'finance@demo.com',
-    password: '123456',
-    role: 'finance',
-  },
-  {
-    id: '5',
-    name: 'Procurement Demo',
-    email: 'procurement@demo.com',
-    password: '123456',
-    role: 'procurement',
-  },
-]
+const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => {
+    if (!localStorage.getItem('procurement-token')) return null
     const savedUser = localStorage.getItem('procurement-user')
     return savedUser ? JSON.parse(savedUser) : null
   })
@@ -63,24 +28,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user])
 
-  function login(email: string, password: string) {
-    const foundUser = DEMO_USERS.find(
-      (item) =>
-        item.email.toLowerCase() === email.toLowerCase() &&
-        item.password === password
-    )
+  async function login(email: string, password: string) {
+    try {
+      const body = new URLSearchParams({ username: email, password })
+      const response = await fetch(`${API_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+      })
+      if (!response.ok) return false
 
-    if (!foundUser) {
+      const result: { access_token: string; user: AuthUser } = await response.json()
+      localStorage.setItem('procurement-token', result.access_token)
+      setUser(result.user)
+      return true
+    } catch {
       return false
     }
-
-    const { password: _, ...authUser } = foundUser
-    setUser(authUser)
-
-    return true
   }
 
   function logout() {
+    localStorage.removeItem('procurement-token')
     setUser(null)
   }
 
