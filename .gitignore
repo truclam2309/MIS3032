@@ -3,5 +3,11 @@ dist/
 .env
 .env.*
 !.env.example
+*.evn
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
 .vscode/
 .DS_Store

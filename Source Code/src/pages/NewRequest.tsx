@@ -30,8 +30,15 @@ export function NewRequest() {
         }}
         primaryLabel="Submit for approval"
         secondaryLabel="Save as draft"
-        onPrimary={(payload) => navigate(`/requests/${createRequest(payload, true)}`)}
-        onSecondary={(payload) => navigate(`/requests/${createRequest(payload, false)}`)} />
+        onPrimary={async (payload) => {
+          try {
+            const requestId = await createRequest(payload, true)
+            navigate(`/requests/${requestId}`)
+          } catch {
+            // The form context displays the API error and keeps the draft visible.
+          }
+        }}
+        onSecondary={async (payload) => navigate(`/requests/${await createRequest(payload, false)}`)} />
       
     </div>);
 

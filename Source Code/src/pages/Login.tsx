@@ -5,17 +5,17 @@ import { useAuth } from '../contexts/AuthContext'
 export function Login() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { login, user } = useAuth()
+  const { login } = useAuth()
 
   const [email, setEmail] = useState('admin@demo.com')
   const [password, setPassword] = useState('123456')
   const [error, setError] = useState('')
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
 
-    const success = login(email, password)
+    const success = await login(email, password)
 
     if (!success) {
       setError('Email hoặc mật khẩu không đúng.')
