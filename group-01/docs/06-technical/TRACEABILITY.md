@@ -13,7 +13,7 @@
 |---|---|---|---|---|
 | US-01 AC1–AC3: trường bắt buộc, gợi ý, gửi PR | REQ-FR-01–03, REQ-BR-01 | New Request, Request Form, AssistantCard | `POST /purchase-requests`; chưa có AI endpoint | TASK-01: đồng bộ contract form; xác định/triển khai AI hỗ trợ |
 | US-02 AC1–AC2: xem trạng thái PR | REQ-FR-04 | Requests, RequestDetail, WorkflowProgress | `GET /purchase-requests`; DB hiện có 4 trạng thái | TASK-02: xác nhận tích hợp FE/API và quyền xem dữ liệu |
-| US-03 AC1–AC4: Manager review/decision | REQ-FR-05–07, REQ-BR-02–04, REQ-NFR-02–03 | Approvals, DecisionPanel | `POST /purchase-requests/{id}/decision`; Manager role; metadata quyết định trên PR | TASK-03: Finance step, resubmission và audit history tổng quát |
+| US-03 AC1–AC4: Manager review/decision | REQ-FR-05–07, REQ-BR-02–04, REQ-NFR-02–03 | Approvals, DecisionPanel | `GET /purchase-requests`; `POST /purchase-requests/{id}/decision`; role Manager; metadata quyết định trên PR | TASK-03: Finance step, resubmission, UI/E2E và audit history; test backend 5/5 memory + 5/5 Supabase, xem [`../08-quality/1.md`](../08-quality/1.md) |
 | US-04 AC1–AC2: Budget check/warning | REQ-FR-08–09, REQ-BR-04–05 | BudgetReview, BudgetPanel | `GET /budgets`, `POST /budget-check`; data trong memory | TASK-04: persistence/config Budget và workflow Finance |
 | US-05 AC1–AC2: Supplier/Quotation collection | REQ-FR-10–11, REQ-BR-06–07 | Suppliers, Sourcing, QuotationCollection | Chưa có route/table | TASK-05: schema, upload, permission, chuẩn hóa quotation |
 | US-06 AC1–AC2: so sánh quotation | REQ-FR-12, REQ-BR-07 | Comparison, QuotationList | Chưa có persistence/API quotation | TASK-06: lưu báo giá và API so sánh |

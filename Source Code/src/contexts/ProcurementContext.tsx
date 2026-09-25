@@ -25,6 +25,7 @@ import type {
 '../types/procurement';
 import { nowIso } from '../utils/format';
 import { isExpired } from '../utils/quotes';
+import { useAuth } from './AuthContext';
 
 export interface BudgetSnapshot {
   line: BudgetLine;
@@ -63,7 +64,7 @@ interface ProcurementValue {
   createPurchaseOrder: (requestId: string) => void;
   receiveGoods: (orderId: string, condition: 'complete' | 'partial', note: string) => void;
   closeOrder: (orderId: string, note: string) => void;
-  createRequest: (payload: NewRequestPayload, submit: boolean) => string;
+  createRequest: (payload: NewRequestPayload, submit: boolean) => Promise<string | null>;
   updateRequest: (
   id: string,
   payload: NewRequestPayload,
@@ -86,6 +87,7 @@ interface ProcurementValue {
 }
 
 const ProcurementContext = createContext<ProcurementValue | null>(null);
+const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
 const APPROVERS: Record<string, string> = {
   Engineering: 'Lê Thanh Bình (Engineering Manager)',
@@ -117,6 +119,7 @@ export function ProcurementProvider({
   const [revealedAnalyses, setRevealedAnalyses] = useState<string[]>(['PR-2026-038', 'PR-2026-032']);
   const [orders, setOrders] = useState<PurchaseOrder[]>(seedOrders);
   const [lastError, setLastError] = useState<string | null>(null);
+  const { user, accessToken } = useAuth();
 
   const patch = useCallback(
     (id: string, updater: (r: PurchaseRequest) => PurchaseRequest) => {
@@ -159,7 +162,7 @@ export function ProcurementProvider({
   }, []);
 
   const createRequest = useCallback(
-    (payload: NewRequestPayload, submit: boolean) => {
+    async (payload: NewRequestPayload, submit: boolean) => {
       const highest = requests.reduce((max, r) => {
         const match = r.id.match(/PR-2026-(\d+)/);
         return match ? Math.max(max, Number.parseInt(match[1], 10)) : max;
@@ -188,7 +191,7 @@ export function ProcurementProvider({
         title: payload.title,
         category: payload.category,
         department: payload.department,
-        requester: 'Nguyễn Hoài An',
+        requester: user?.name ?? 'Nguyễn Hoài An',
         costCenter: payload.costCenter,
         neededBy: payload.neededBy,
         deliveryLocation: payload.deliveryLocation,
@@ -204,10 +207,60 @@ export function ProcurementProvider({
         aiSuggestionsApplied: payload.aiSuggestionsApplied,
         timeline
       };
+
+      if (submit) {
+        if (!accessToken || !user) {
+          setLastError('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại rồi gửi yêu cầu.');
+          return null;
+        }
+
+        try {
+          const response = await fetch(`${API_URL}/purchase-requests`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify({
+              title: payload.title,
+              department: payload.department,
+              amount: estimatedTotal,
+              category: payload.category,
+              justification: payload.justification,
+              requester: user.name,
+            }),
+          });
+
+          if (!response.ok) {
+            const body = await response.json().catch(() => null) as { detail?: string } | null;
+            throw new Error(body?.detail ?? `Backend trả về lỗi ${response.status}.`);
+          }
+
+          const saved = await response.json() as { id: string; created_at?: string };
+          request.id = saved.id;
+          request.createdAt = saved.created_at ?? request.createdAt;
+          request.status = 'submitted';
+          request.timeline = [
+            ...request.timeline,
+            evt('System', 'system', 'Purchase request saved to backend'),
+          ];
+          setRequests((prev) => [request, ...prev]);
+          setLastError(null);
+          return saved.id;
+        } catch (error) {
+          setLastError(
+            error instanceof Error
+              ? `Không thể lưu Purchase Request: ${error.message}`
+              : 'Không thể kết nối backend. Vui lòng thử lại.'
+          );
+          return null;
+        }
+      }
+
       setRequests((prev) => [request, ...prev]);
       return id;
     },
-    [requests]
+    [requests, accessToken, user]
   );
 
   const updateRequest = useCallback(

@@ -106,3 +106,10 @@ AI được sử dụng để hỗ trợ nhóm trong các hoạt động phân t
 - **Hiệu chỉnh:** Tạo README/placeholder cho `04-design`, `05-technical`, `06-testing`, `07-release`, `docs/logs`, cùng `src/.gitkeep` và `tests/.gitkeep`.
 - **Verification:** Các file đều ghi rõ trạng thái chưa xác nhận; không có technical decision, test execution result, release claim hoặc code nghiệp vụ được bịa.
 - **Quyết định:** Giữ các thư mục ở trạng thái scaffold cho đến khi nhóm cung cấp input và phê duyệt nội dung tương ứng.
+
+### AI-040 - Rà soát và hoàn thiện tài liệu US-03
+- **Mục đích:** Đối chiếu các tài liệu QA, bảo mật/NFR, hướng dẫn chạy, release, traceability và retrospective với code/test backend hiện có.
+- **Input:** US-03, `backend-test/routers/approval.py`, `backend-test/routers/purchase_requests.py`, hai file test approval, các tài liệu chất lượng hiện có và yêu cầu bỏ mục 11 CI/CD.
+- **Output:** Cập nhật tài liệu tiếng Việt; bổ sung runbook, changelog, retrospective và checklist deliverables; làm rõ trạng thái các acceptance criteria.
+- **Verification:** Dùng kết quả chạy test backend gần nhất trong phiên làm bằng chứng 5/5 local và 5/5 Supabase. Trong lượt cập nhật tài liệu này không chạy lại test, không xác nhận UI/E2E, triển khai, audit log đầy đủ hay Finance endpoint.
+- **Correction / Decision:** Không tự gán version release, commit/PR hoặc thành viên phụ trách; giữ các điểm chưa có bằng chứng ở trạng thái thiếu/chưa xác nhận. Bỏ mục 11 theo yêu cầu người dùng.

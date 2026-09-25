@@ -1,65 +1,57 @@
-# QA Report — US-03 Approval Workflow
+# Báo cáo kiểm thử — US-03: Xem và xử lý Approval
 
-## 1. Scope
+## 1. Phạm vi
 
-QA này tập trung vào **US-03 — Xem và xử lý Approval**.
+Kiểm tra 5 hành động chính của US-03 ở backend:
 
-Phạm vi kiểm tra:
+1. Manager duyệt Purchase Request.
+2. Manager từ chối Purchase Request.
+3. Manager yêu cầu chỉnh sửa.
+4. Employee không được phép quyết định.
+5. Không được duyệt lại Purchase Request đã duyệt.
 
-* Manager thực hiện Approve Purchase Request.
-* Manager thực hiện Reject Purchase Request.
-* Manager thực hiện Request Revision.
-* Kiểm tra quyền Approval theo role.
-* Kiểm tra các state transition của Approval.
-* Kiểm tra không thể xử lý lại Purchase Request đã được xử lý.
-* Regression test cho BUG-001.
+Kiểm tra trên cả kho dữ liệu trong bộ nhớ và Supabase thật. Không đánh giá các User Story khác.
 
-Các User Story khác không thuộc phạm vi của QA Report này.
+## 2. Môi trường và kết quả
 
-## 2. Environment
+Ngày kiểm tra: 2026-09-26. Python 3.11.1, pytest 9.1.1, FastAPI TestClient.
 
-* Frontend: React + Vite
-* Backend: FastAPI
-* Automated test: pytest
-* Production build: Vite
-* Demo environment: Vercel
-* Source repository: GitHub
+| Bộ kiểm thử | Kết quả | Bằng chứng |
+|---|---:|---|
+| Backend dùng bộ nhớ | 5/5 đạt | [`backend-test/test_approval.py`](../../../backend-test/test_approval.py) |
+| Backend dùng Supabase thật | 5/5 đạt | [`backend-test/test_approval_supabase.py`](../../../backend-test/test_approval_supabase.py) |
+| Build và kiểm thử giao diện | Chưa chạy trong lần kiểm tra này | Chưa có kết quả build/UI test để xác nhận |
 
-## 3. Result
+Test Supabase đã ghi request thử có mã `PR-TEST-<UUID>` rồi đọc dữ liệu sau quyết định. Role Supabase hiện dùng cho test không có quyền `DELETE`, vì vậy các dòng test được giữ lại với mã riêng.
 
-| Test                             | Result   |
-| -------------------------------- | -------- |
-| Manager Approve                  | PASS     |
-| Manager Reject                   | PASS     |
-| Manager Request Revision         | PASS     |
-| Employee không được Approval     | PASS     |
-| PR đã xử lý không được xử lý lại | PASS     |
-| Backend automated tests          | 5 passed |
-| Frontend production build        | PASS     |
-| BUG-001 regression               | PASS*    |
+## 3. Đối chiếu Acceptance Criteria
 
-* Chỉ ghi PASS nếu đã thực sự kiểm tra regression sau khi sửa BUG-001.
+| Tiêu chí US-03 | Trạng thái | Nhận xét |
+|---|---|---|
+| AC1 — Manager xem thông tin PR đang chờ duyệt | Một phần | API có `GET /purchase-requests`; chưa có kiểm thử giao diện hoặc quyền xem theo phạm vi Manager. |
+| AC2 — Manager approve và tiếp tục workflow | Một phần | Approve lưu người duyệt/thời điểm/comment, đặt `APPROVED` và hiển thị Finance là bước kế tiếp; chưa có endpoint để Finance quyết định. |
+| AC3 — Manager reject hoặc yêu cầu sửa | Đạt ở backend | Cả hai trạng thái và thông tin người thực hiện được lưu; test memory và Supabase đều đạt. |
+| AC4 — Chuyển theo workflow được cấu hình | Chưa hoàn tất | Workflow hiện hard-code Manager → Finance → Procurement; Finance handoff/decision và cấu hình hierarchy chưa triển khai. |
 
-## 4. Known Issues
+## 4. Vấn đề còn lại
 
-* QA Report này chỉ đánh giá US-03.
-* Các User Story khác không nằm trong phạm vi kiểm thử này.
-* Các AI features thuộc User Story khác và chưa được đánh giá trong QA của US-03.
+- Chưa có bước API để Finance tiếp tục duyệt sau Manager.
+- Chưa có gửi lại PR sau khi yêu cầu chỉnh sửa.
+- Metadata quyết định được lưu trên PR, nhưng chưa có audit log append-only ghi lịch sử nhiều lần xử lý.
+- Chưa chạy UI/E2E để xác nhận ẩn nút/điều hướng theo role; chưa xác nhận BUG-001 frontend đã được sửa.
+- Chưa chạy build frontend trong lần kiểm tra này.
 
-## 5. Risk
+## 5. Rủi ro
 
-| Risk                                         | Level  | Mitigation                         |
-| -------------------------------------------- | ------ | ---------------------------------- |
-| Approval permission có thể bị regression     | High   | Duy trì backend authorization test |
-| State transition có thể bị thay đổi sai      | High   | Duy trì automated approval tests   |
-| Frontend và backend permission không đồng bộ | Medium | Kiểm tra cả UI và backend          |
+| Rủi ro | Mức độ | Kiểm soát hiện có |
+|---|---|---|
+| Người không phải Manager gọi endpoint quyết định | Cao | Backend yêu cầu role `manager`; test Employee bị từ chối. |
+| Quyết định đồng thời ghi đè nhau ở Supabase | Cao | Update có điều kiện `status=PENDING_APPROVAL`; test không mô phỏng race với DB thật. |
+| UI hiển thị quyền khác backend | Trung bình | Chưa có UI/E2E test xác nhận. |
+| Finance handoff chưa thực hiện đủ | Cao | Đã ghi nhận là phần còn thiếu, không coi AC4 hoàn thành. |
 
-## 6. Sign-off
+## 6. Kết luận
 
-**US-03 — Approval Workflow: PASS**
+**Kết quả kiểm thử backend US-03: ĐẠT (5/5 memory, 5/5 Supabase).**
 
-Trong phạm vi US-03, các test đã thực hiện đạt kết quả yêu cầu.
-
-**Release blockers: 0**
-
-Kết luận `Release blockers = 0` chỉ áp dụng cho **US-03**, không đại diện cho trạng thái hoàn thành của toàn bộ 11 User Story.
+**Trạng thái toàn bộ US-03: ĐANG HOÀN THIỆN.** AC4 và xác minh UI chưa hoàn tất; không kết luận toàn bộ story đã release-ready.

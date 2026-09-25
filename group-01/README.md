@@ -1,23 +1,31 @@
-# ProcureAI - Internal Procurement & Approval Platform
+# ProcureAI — Nền tảng đề xuất mua sắm và phê duyệt nội bộ
 
-## Project
+## Dự án
 
-AI Procurement & Purchase Approval System của Nhóm 1.
+Hệ thống hỗ trợ Purchase Request, Approval và các bước mua sắm tiếp theo trong phạm vi đồ án MIS3032.
 
-## Documentation entry points
+## Điểm bắt đầu tài liệu
 
-- [Project Index](docs/00-project-index.md)
+- [Chỉ mục dự án](docs/00-project-index.md)
 - [Project Charter](docs/01-discovery/1.project-charter.md)
-- [Requirements](docs/01-discovery/requirements.md)
-- [Business Rules](docs/02-vault/03-domain/business_rules.md)
-- [MVP Scope](docs/01-discovery/MVP_Scope.md)
-- [Vault Index](docs/02-vault/00-index.md)
-- [Product documents](docs/03-product/)
+- [Requirements](docs/02-requirements/requirements.md)
+- [User Stories](docs/03-product/user-stories.md)
+- [Business Rules và workflow](Vault/domain.md)
+- [Ma trận truy vết](docs/06-technical/TRACEABILITY.md)
+- [Báo cáo QA US-03](docs/08-quality/QA_REPORT.md)
+- [Checklist tài liệu US-03](docs/08-quality/US03-artifact-checklist.md)
+- [Runbook test US-03](docs/08-quality/RUNBOOK-US03.md)
 
-## MVP workflow
+## Workflow mục tiêu
 
-`Request → Approve → Collect Quotations → Compare → PO → Receive → Close`
+`Purchase Request → Approval → Collect Quotations → Compare → Purchase Order → Receiving → Close`
 
-## Source-of-truth rule
+Trong backend hiện tại, US-03 mới hỗ trợ quyết định Manager; Finance handoff/decision và các bước sau vẫn đang thiếu.
 
-Requirements và Business Rules đã xác nhận có priority cao hơn Product, Design, Technical, Testing và AI output.
+## Chạy backend test US-03
+
+Làm việc trong `backend-test`; xem [RUNBOOK-US03.md](docs/08-quality/RUNBOOK-US03.md) để biết cách cấu hình `.env` và chạy riêng chế độ memory hoặc Supabase thật.
+
+## Quy tắc nguồn chuẩn
+
+Requirements và Business Rules đã được xác nhận có ưu tiên cao hơn Product, Design, Technical, Testing và nội dung do AI đề xuất.

@@ -10,26 +10,32 @@ export function Login() {
   const [email, setEmail] = useState('admin@demo.com')
   const [password, setPassword] = useState('123456')
   const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
+    setSubmitting(true)
 
-    const success = login(email, password)
+    try {
+      const success = await login(email, password)
 
-    if (!success) {
-      setError('Email hoặc mật khẩu không đúng.')
-      return
+      if (!success) {
+        setError('Không đăng nhập được. Kiểm tra tài khoản hoặc kết nối backend.')
+        return
+      }
+
+      const from = location.state?.from?.pathname
+
+      if (from) {
+        navigate(from, { replace: true })
+        return
+      }
+
+      navigate('/requests', { replace: true })
+    } finally {
+      setSubmitting(false)
     }
-
-    const from = location.state?.from?.pathname
-
-if (from) {
-  navigate(from, { replace: true })
-  return
-}
-
-navigate('/dashboard', { replace: true })
   }
 
   return (
@@ -83,9 +89,10 @@ navigate('/dashboard', { replace: true })
 
             <button
               type="submit"
+              disabled={submitting}
               className="w-full rounded-lg bg-brand-600 text-white py-2.5 font-medium hover:bg-brand-700 transition"
             >
-              Đăng nhập
+              {submitting ? 'Đang đăng nhập…' : 'Đăng nhập'}
             </button>
           </form>
 
