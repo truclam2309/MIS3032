@@ -84,6 +84,7 @@ def create_request(
         response = (
             supabase.table("purchase_requests")
             .insert(db_request)
+            .select("*")
             .execute()
         )
         if not response.data:

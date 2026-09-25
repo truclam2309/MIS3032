@@ -67,10 +67,14 @@ def decide_request(
                     "next_approval_role": "Finance",
                 })
                 .eq("id", request_id)
+                .eq("status", "PENDING_APPROVAL")
                 .execute()
             )
             if not response.data:
-                raise HTTPException(status_code=500, detail="Failed to update purchase request")
+                raise HTTPException(
+                    status_code=400,
+                    detail="Request is no longer pending approval",
+                )
             updated = dict(response.data[0])
             updated["workflow"] = workflow_for_status("APPROVED")
             return updated
@@ -99,10 +103,14 @@ def decide_request(
                     "next_approval_role": None,
                 })
                 .eq("id", request_id)
+                .eq("status", "PENDING_APPROVAL")
                 .execute()
             )
             if not response.data:
-                raise HTTPException(status_code=500, detail="Failed to update purchase request")
+                raise HTTPException(
+                    status_code=400,
+                    detail="Request is no longer pending approval",
+                )
             updated = dict(response.data[0])
             updated["workflow"] = workflow_for_status("REJECTED")
             return updated
@@ -131,10 +139,14 @@ def decide_request(
                     "next_approval_role": None,
                 })
                 .eq("id", request_id)
+                .eq("status", "PENDING_APPROVAL")
                 .execute()
             )
             if not response.data:
-                raise HTTPException(status_code=500, detail="Failed to update purchase request")
+                raise HTTPException(
+                    status_code=400,
+                    detail="Request is no longer pending approval",
+                )
             updated = dict(response.data[0])
             updated["workflow"] = workflow_for_status("REVISION_REQUIRED")
             return updated
