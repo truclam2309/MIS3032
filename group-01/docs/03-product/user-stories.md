@@ -28,15 +28,15 @@
 
 **EPIC-03 — Supplier & Quotation**
 
-> FR-10 → FR-14
+> FR-10 → FR-15
 
 **EPIC-04 — Purchase Order**
 
-> FR-15
+> FR-16
 
 **EPIC-05 — Receiving & Close**
 
-> FR-16 → FR-17
+> FR-17 → FR-18
 
 
 ---
