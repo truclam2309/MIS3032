@@ -57,7 +57,7 @@ export function RequestForm({
 
 
 
-}: {mode: 'create' | 'edit';initialValues: RequestFormValues;showIntake?: boolean;banner?: React.ReactNode;primaryLabel: string;secondaryLabel: string;onPrimary: (payload: NewRequestPayload, changeSummary: string[]) => void | Promise<void>;onSecondary: (payload: NewRequestPayload, changeSummary: string[]) => void | Promise<void>;onCancel?: () => void;}) {
+}: {mode: 'create' | 'edit';initialValues: RequestFormValues;showIntake?: boolean;banner?: React.ReactNode;primaryLabel: string;secondaryLabel: string;onPrimary: (payload: NewRequestPayload, changeSummary: string[]) => void;onSecondary: (payload: NewRequestPayload, changeSummary: string[]) => void;onCancel?: () => void;}) {
   const { aiAssistEnabled } = useProcurement();
 
   const [form, setForm] = useState<FieldState>({
@@ -77,7 +77,6 @@ export function RequestForm({
   const [applied, setApplied] = useState<string[]>([]);
   const [dismissed, setDismissed] = useState<string[]>([]);
   const [submitAttempted, setSubmitAttempted] = useState(false);
-  const [saving, setSaving] = useState(false);
 
   const set = (key: keyof FieldState, value: string) => setForm((f) => ({ ...f, [key]: value }));
 
@@ -130,15 +129,10 @@ export function RequestForm({
     aiSuggestionsApplied: applied
   });
 
-  const handlePrimary = async () => {
+  const handlePrimary = () => {
     setSubmitAttempted(true);
-    if (!canSubmit || saving) return;
-    setSaving(true);
-    try {
-      await onPrimary(buildPayload(), changeSummary);
-    } finally {
-      setSaving(false);
-    }
+    if (!canSubmit) return;
+    onPrimary(buildPayload(), changeSummary);
   };
 
   const handleNormalize = () => {
@@ -537,23 +531,13 @@ export function RequestForm({
           <button
             type="button"
             onClick={handlePrimary}
-            disabled={saving}
             className="rounded bg-brand-500 px-3 py-2 text-sm font-semibold text-ink-invert transition-colors duration-150 ease-exp hover:bg-brand-600">
             
-            {saving ? 'Saving…' : primaryLabel}
+            {primaryLabel}
           </button>
           <button
             type="button"
-            disabled={saving}
-            onClick={async () => {
-              if (saving) return;
-              setSaving(true);
-              try {
-                await onSecondary(buildPayload(), changeSummary);
-              } finally {
-                setSaving(false);
-              }
-            }}
+            onClick={() => onSecondary(buildPayload(), changeSummary)}
             className="rounded border border-line bg-surface px-3 py-2 text-sm font-semibold text-ink-muted transition-colors duration-150 ease-exp hover:bg-canvas hover:text-ink">
             
             {secondaryLabel}

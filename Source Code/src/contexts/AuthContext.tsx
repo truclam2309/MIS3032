@@ -4,24 +4,55 @@ import type { Role } from '../types/procurement'
 
 interface AuthContextType {
   user: AuthUser | null
-  accessToken: string | null
-  login: (email: string, password: string) => Promise<boolean>
+  login: (email: string, password: string) => boolean
   logout: () => void
   hasRole: (roles: Role[]) => boolean
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')
+const DEMO_USERS: Array<AuthUser & { password: string }> = [
+  {
+    id: '1',
+    name: 'System Administrator',
+    email: 'admin@demo.com',
+    password: '123456',
+    role: 'admin',
+  },
+  {
+    id: '2',
+    name: 'Employee Demo',
+    email: 'employee@demo.com',
+    password: '123456',
+    role: 'employee',
+  },
+  {
+    id: '3',
+    name: 'Manager Demo',
+    email: 'manager@demo.com',
+    password: '123456',
+    role: 'manager',
+  },
+  {
+    id: '4',
+    name: 'Finance Demo',
+    email: 'finance@demo.com',
+    password: '123456',
+    role: 'finance',
+  },
+  {
+    id: '5',
+    name: 'Procurement Demo',
+    email: 'procurement@demo.com',
+    password: '123456',
+    role: 'procurement',
+  },
+]
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [accessToken, setAccessToken] = useState<string | null>(() =>
-    localStorage.getItem('procurement-access-token')
-  )
   const [user, setUser] = useState<AuthUser | null>(() => {
-    if (!localStorage.getItem('procurement-access-token')) return null
     const savedUser = localStorage.getItem('procurement-user')
-    return savedUser ? JSON.parse(savedUser) as AuthUser : null
+    return savedUser ? JSON.parse(savedUser) : null
   })
 
   useEffect(() => {
@@ -32,32 +63,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user])
 
-  async function login(email: string, password: string) {
-    try {
-      const response = await fetch(`${API_URL}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ username: email, password }),
-      })
-      if (!response.ok) return false
+  function login(email: string, password: string) {
+    const foundUser = DEMO_USERS.find(
+      (item) =>
+        item.email.toLowerCase() === email.toLowerCase() &&
+        item.password === password
+    )
 
-      const result = await response.json() as {
-        access_token: string
-        user: AuthUser
-      }
-      localStorage.setItem('procurement-access-token', result.access_token)
-      setAccessToken(result.access_token)
-      setUser(result.user)
-      return true
-    } catch {
+    if (!foundUser) {
       return false
     }
+
+    const { password: _, ...authUser } = foundUser
+    setUser(authUser)
+
+    return true
   }
 
   function logout() {
     setUser(null)
-    setAccessToken(null)
-    localStorage.removeItem('procurement-access-token')
   }
 
   function hasRole(roles: Role[]) {
@@ -70,7 +94,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, accessToken, login, logout, hasRole }}>
+    <AuthContext.Provider value={{ user, login, logout, hasRole }}>
       {children}
     </AuthContext.Provider>
   )
