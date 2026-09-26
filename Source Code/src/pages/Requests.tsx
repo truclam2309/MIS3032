@@ -105,9 +105,8 @@ export function Requests() {
       {attention.length > 0 ? (
         <div className="mt-6 grid gap-3 sm:grid-cols-2">
           {attention.map((r) => (
-            <Link
+            <div
               key={r.id}
-              to={`/requests/${r.id}`}
               className={`group block rounded-lg border p-4 shadow-card transition-colors duration-150 ease-exp ${
                 r.status === 'error'
                   ? 'border-danger-200 bg-danger-50 hover:bg-danger-50/70'
@@ -139,7 +138,7 @@ export function Requests() {
                   ? r.errorNote
                   : r.decision?.note}
               </p>
-            </Link>
+            </div>
           ))}
         </div>
       ) : null}

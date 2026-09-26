@@ -8,11 +8,13 @@ import { DecisionPanel } from '../components/DecisionPanel';
 import { RequestTimeline } from '../components/RequestTimeline';
 import { WorkflowProgress } from '../components/WorkflowProgress';
 import { QuotationList } from '../components/QuotationList';
+import { useAuth } from '../contexts/AuthContext';
 import { formatDate, formatDateTime, formatVnd } from '../utils/format';
 
 export function RequestDetail() {
   const { id = '' } = useParams();
   const { getRequest, budgetFor, quotationsFor, inboundFor, getSupplier } = useProcurement();
+  const { user } = useAuth();
   const request = getRequest(id);
 
   if (!request) {
@@ -25,6 +27,20 @@ export function RequestDetail() {
         </Link>
       </div>);
 
+  }
+
+  if (request.status === 'pending-approval' && user?.role !== 'manager') {
+    return (
+      <div className="mx-auto max-w-3xl rounded-lg border border-line bg-surface p-10 text-center">
+        <h1 className="text-lg font-semibold">Manager approval in progress</h1>
+        <p className="mt-1 text-sm text-ink-muted">
+          This purchase request is only available to the Manager during approval.
+        </p>
+        <Link to="/requests" className="mt-4 inline-block text-sm font-semibold text-brand-600">
+          Back to requests
+        </Link>
+      </div>
+    );
   }
 
   const snapshot = budgetFor(request);
