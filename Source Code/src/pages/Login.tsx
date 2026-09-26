@@ -5,37 +5,31 @@ import { useAuth } from '../contexts/AuthContext'
 export function Login() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { login } = useAuth()
+  const { login, user } = useAuth()
 
   const [email, setEmail] = useState('admin@demo.com')
   const [password, setPassword] = useState('123456')
   const [error, setError] = useState('')
-  const [submitting, setSubmitting] = useState(false)
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
-    setSubmitting(true)
 
-    try {
-      const result = login(email, password)
+    const success = login(email, password)
 
-      if (!result) {
-        setError('Email hoặc mật khẩu không đúng.')
-        return
-      }
-
-      const from = location.state?.from?.pathname
-
-      if (from) {
-        navigate(from, { replace: true })
-        return
-      }
-
-      navigate('/requests', { replace: true })
-    } finally {
-      setSubmitting(false)
+    if (!success) {
+      setError('Email hoặc mật khẩu không đúng.')
+      return
     }
+
+    const from = location.state?.from?.pathname
+
+if (from) {
+  navigate(from, { replace: true })
+  return
+}
+
+navigate('/dashboard', { replace: true })
   }
 
   return (
@@ -89,10 +83,9 @@ export function Login() {
 
             <button
               type="submit"
-              disabled={submitting}
               className="w-full rounded-lg bg-brand-600 text-white py-2.5 font-medium hover:bg-brand-700 transition"
             >
-              {submitting ? 'Đang đăng nhập…' : 'Đăng nhập'}
+              Đăng nhập
             </button>
           </form>
 
