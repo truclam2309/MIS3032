@@ -30,14 +30,8 @@ export function NewRequest() {
         }}
         primaryLabel="Submit for approval"
         secondaryLabel="Save as draft"
-        onPrimary={async (payload) => {
-          const id = await createRequest(payload, true);
-          if (id) navigate(`/requests/${id}`);
-        }}
-        onSecondary={async (payload) => {
-          const id = await createRequest(payload, false);
-          if (id) navigate(`/requests/${id}`);
-        }} />
+        onPrimary={(payload) => navigate(`/requests/${createRequest(payload, true)}`)}
+        onSecondary={(payload) => navigate(`/requests/${createRequest(payload, false)}`)} />
       
     </div>);
 
