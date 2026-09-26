@@ -18,10 +18,10 @@ export function Login() {
     setSubmitting(true)
 
     try {
-      const result = await login(email, password)
+      const result = login(email, password)
 
-      if (!result.ok) {
-        setError(result.message || 'Đăng nhập thất bại.')
+      if (!result) {
+        setError('Email hoặc mật khẩu không đúng.')
         return
       }
 
